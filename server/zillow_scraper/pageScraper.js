@@ -1,5 +1,8 @@
+const getDsDate = require('../utils/getDsDate');
 
-// autoScroll source: https://github.com/chenxiaochun/blog/issues/38
+// console.log('getDsDate: ', getDsDate());
+
+// autoScroll source: https://github.com/chenxiaochun/blog/issues/38;
 async function autoScroll(page) {
     await page.evaluate(async () => {
         await new Promise((resolve, reject) => {
@@ -21,7 +24,9 @@ async function autoScroll(page) {
 
 
 const scraperObject = {
+    ds: getDsDate(),
     async scraper(browser, url) {
+        console.log('sraper ds: ', this.ds);
         let page = await browser.newPage();
         console.log(`Navigating to ${url}...`);
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 300000 });
@@ -39,16 +44,19 @@ const scraperObject = {
         console.log(pageUrls);
 
         // Loop through each of those links, open a new page instance and get the relevant data from them
-        let pagePromise = (link) => new Promise(async (resolve, reject) => {
-            // let dataObj = {};
+        let pagePromise = (link, dsTimeStamp) => new Promise(async (resolve, reject) => {
+            console.log('dsTimeStamp: ', dsTimeStamp);
             let newPage = await browser.newPage();
             await newPage.goto(link);
             await newPage.waitForSelector('.search-page-list-container');
             await autoScroll(newPage);
             // await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // Solution to solve ReferenceError: https://github.com/puppeteer/puppeteer/issues/5165#issuecomment-584185458
             let dataObj = await newPage.$$eval(
                 'div > ul > li > article',
-                elements => {
+                (elements, ds) => {
+                    console.log('ds: ', ds);
                     const dataList = elements.map(el => {
                         let data = {};
                         price = el.querySelector('.list-card-price').textContent;
@@ -59,12 +67,14 @@ const scraperObject = {
                         const re = /<img[^>]+src="(https:\/\/[^">]+)/g;
                         reResult = re.exec(imgTag);
                         data['imageLink'] = reResult[1];
+                        data['ds'] = ds;
                         // data['imageLink'] = imgTag;
                         return data
                     });
                     Promise.all(dataList).then(() => console.log('done'))
                     return dataList;
-                }
+                },
+                dsTimeStamp
             )
             // console.log(dataObj);
             resolve(dataObj);
@@ -73,13 +83,13 @@ const scraperObject = {
 
         let allDataList = []
         for (link in pageUrls) {
-            let currentDataList = await pagePromise(pageUrls[link]);
+            let currentDataList = await pagePromise(pageUrls[link], this.ds);
             console.log(currentDataList.length);
             allDataList = [...allDataList, ...currentDataList];
         }
         console.log(allDataList.length);
         console.log('--------------------------');
-        allDataList.forEach(elem => console.log(elem.imageLink));
+        // allDataList.forEach(elem => console.log(elem.imageLink));
         // console.log(allDataList);
         console.log('--------------------------');
         await page.close();
