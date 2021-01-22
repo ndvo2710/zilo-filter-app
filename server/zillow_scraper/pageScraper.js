@@ -1,6 +1,7 @@
+const mongoose = require('mongoose');
 const getDsDate = require('../utils/getDsDate');
+const zillowModel = require('../models/zillow.model.js');
 
-// console.log('getDsDate: ', getDsDate());
 
 // autoScroll source: https://github.com/chenxiaochun/blog/issues/38;
 async function autoScroll(page) {
@@ -26,10 +27,9 @@ async function autoScroll(page) {
 const scraperObject = {
     ds: getDsDate(),
     async scraper(browser, url) {
-        console.log('sraper ds: ', this.ds);
+        await new Promise(resolve => setTimeout(resolve, 5000));
         let page = await browser.newPage();
-        console.log(`Navigating to ${url}...`);
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 300000 });
+        await page.goto(url.locationURL, { waitUntil: "domcontentloaded", timeout: 300000 });
 
         // Wait for the required DOM to be rendered
         await page.waitForSelector('.search-page-list-container');
@@ -44,8 +44,7 @@ const scraperObject = {
         console.log(pageUrls);
 
         // Loop through each of those links, open a new page instance and get the relevant data from them
-        let pagePromise = (link, dsTimeStamp) => new Promise(async (resolve, reject) => {
-            console.log('dsTimeStamp: ', dsTimeStamp);
+        let pagePromise = (link, dsTimeStamp, location) => new Promise(async (resolve, reject) => {
             let newPage = await browser.newPage();
             await newPage.goto(link);
             await newPage.waitForSelector('.search-page-list-container');
@@ -55,8 +54,7 @@ const scraperObject = {
             // Solution to solve ReferenceError: https://github.com/puppeteer/puppeteer/issues/5165#issuecomment-584185458
             let dataObj = await newPage.$$eval(
                 'div > ul > li > article',
-                (elements, ds) => {
-                    console.log('ds: ', ds);
+                (elements, ds, loc) => {
                     const dataList = elements.map(el => {
                         let data = {};
                         price = el.querySelector('.list-card-price').textContent;
@@ -67,31 +65,34 @@ const scraperObject = {
                         const re = /<img[^>]+src="(https:\/\/[^">]+)/g;
                         reResult = re.exec(imgTag);
                         data['imageLink'] = reResult[1];
+                        data['location'] = loc;
                         data['ds'] = ds;
-                        // data['imageLink'] = imgTag;
                         return data
                     });
-                    Promise.all(dataList).then(() => console.log('done'))
                     return dataList;
                 },
-                dsTimeStamp
-            )
-            // console.log(dataObj);
+                dsTimeStamp,
+                location
+            );
+
             resolve(dataObj);
             await newPage.close();
         });
 
         let allDataList = []
         for (link in pageUrls) {
-            let currentDataList = await pagePromise(pageUrls[link], this.ds);
-            console.log(currentDataList.length);
+            let currentDataList = await pagePromise(pageUrls[link], this.ds, url.location);
+
+            currentDataList.forEach(async (dp) => {
+                modelStore = new zillowModel(dp);
+                try {
+                    await modelStore.save();
+                } catch (err) {
+                    throw new Error(`Error: ${err} \n ${dp}`);
+                }
+            })
             allDataList = [...allDataList, ...currentDataList];
         }
-        console.log(allDataList.length);
-        console.log('--------------------------');
-        // allDataList.forEach(elem => console.log(elem.imageLink));
-        // console.log(allDataList);
-        console.log('--------------------------');
         await page.close();
         await new Promise(resolve => setTimeout(resolve, 5000));
         return allDataList;

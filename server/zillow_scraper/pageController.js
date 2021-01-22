@@ -1,7 +1,7 @@
 const pageScraper = require('./pageScraper');
 async function scrapeAll(browserObject, url) {
 
-    console.log('pageController url: ', url);
+    console.log('pageController url: ', url.locationURL);
 
     let browser;
 
@@ -12,7 +12,6 @@ async function scrapeAll(browserObject, url) {
         await browser.disconnect();
         await browser.close();
         await new Promise(resolve => setTimeout(resolve, 5000));
-        return eachPageData;
     }
     catch (err) {
         console.log("Could not resolve the browser instance => ", err);
